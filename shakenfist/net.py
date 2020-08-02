@@ -198,19 +198,11 @@ class Network(object):
             self.deploy_nat()
             self.update_dhcp()
         else:
-            admin_token = util.get_api_token(
-                'http://%s:%d' % (config.parsed.get('NETWORK_NODE_IP'),
-                                  config.parsed.get('API_PORT')),
-                namespace='system')
-            LOG.info('%s: calling /deploy_network_node on network_node', self)
-            requests.request(
-                'put',
-                ('http://%s:%d/deploy_network_node'
-                 % (config.parsed.get('NETWORK_NODE_IP'),
-                    config.parsed.get('API_PORT'))),
-                data=json.dumps({'uuid': self.uuid}),
-                headers={'Authorization': admin_token,
-                         'User-Agent': util.get_user_agent()})
+            db.enqueue('networknode',
+                       {
+                           'type': 'deploy',
+                           'network_uuid': self.uuid
+                       })
 
     def deploy_nat(self):
         if not self.provide_nat:
@@ -323,18 +315,11 @@ class Network(object):
                     d = dhcp.DHCP(self.uuid, subst['vx_veth_inner'])
                     d.restart_dhcpd()
         else:
-            admin_token = util.get_api_token(
-                'http://%s:%d' % (config.parsed.get('NETWORK_NODE_IP'),
-                                  config.parsed.get('API_PORT')),
-                namespace='system')
-            requests.request(
-                'put',
-                ('http://%s:%d/update_dhcp'
-                 % (config.parsed.get('NETWORK_NODE_IP'),
-                    config.parsed.get('API_PORT'))),
-                data=json.dumps({'uuid': self.uuid}),
-                headers={'Authorization': admin_token,
-                         'User-Agent': util.get_user_agent()})
+            db.enqueue('networknode',
+                       {
+                           'type': 'update_dhcp',
+                           'network_uuid': self.uuid
+                       })
 
     def remove_dhcp(self):
         if util.is_network_node():
@@ -344,18 +329,11 @@ class Network(object):
                     d = dhcp.DHCP(self.uuid, subst['vx_veth_inner'])
                     d.remove_dhcpd()
         else:
-            admin_token = util.get_api_token(
-                'http://%s:%d' % (config.parsed.get('NETWORK_NODE_IP'),
-                                  config.parsed.get('API_PORT')),
-                namespace='system')
-            requests.request(
-                'put',
-                ('http://%s:%d/remove_dhcp'
-                 % (config.parsed.get('NETWORK_NODE_IP'),
-                    config.parsed.get('API_PORT'))),
-                data=json.dumps({'uuid': self.uuid}),
-                headers={'Authorization': admin_token,
-                         'User-Agent': util.get_user_agent()})
+            db.enqueue('networknode',
+                       {
+                           'type': 'remove_dhcp',
+                           'network_uuid': self.uuid
+                       })
 
     def discover_mesh(self):
         mesh_re = re.compile(r'00:00:00:00:00:00 dst (.*) self permanent')
