@@ -162,6 +162,11 @@ class Instance(object):
         if not self.db_entry['block_devices']['finalized']:
             modified_disks = []
             for disk in self.db_entry['block_devices']['devices']:
+                # NOTE(mikal): This should probably be in db_entry, but this way
+                # is more upgrade friendly.
+                disk['source'] = "<source file='%s'/>" % disk['path']
+                disk['source_type'] = 'file'
+
                 if disk.get('base'):
                     img = images.Image.from_url(disk['base'])
                     hashed_image_path = img.version_image_path()
@@ -191,7 +196,11 @@ class Instance(object):
                         disk['device'] = 'hd%s' % disk['device'][-1]
                         disk['bus'] = 'ide'
                     else:
-                        if config.get('DISK_FORMAT') == 'qcow':
+                        if config.get('DISK_FORMAT') in ['qcow', 'qcow_gluster']:
+                            # NOTE(mikal): Ubuntu 20.04 does not have gluster support enabled in
+                            # qemu command line tools, so we need to use the fuse mount to create
+                            # # the image, which we can later reference via the libgfapi
+                            # implementation in libvirt / kvm / qemu.
                             with util.RecordedOperation('create copy on write layer', self):
                                 images.create_cow([lock], hashed_image_path,
                                                   disk['path'], disk['size'])
@@ -204,7 +213,18 @@ class Instance(object):
                                 '      </backingStore>\n'
                                 % (hashed_image_path))
 
-                        elif config.get('DISK_FORMAT') == 'qcow_flat':
+                            if config.get('DISK_FORMAT') == 'qcow_gluster':
+                                disk['path'] = disk['path'].replace(
+                                    '/srv/shakenfist/instances',
+                                    'shakenfist'
+                                )
+                                disk['source'] = ("<source protocol='gluster' name='%s'>"
+                                                  "<host name='%s' port='24007' />"
+                                                  "</source>"
+                                                  % (disk['path'], config.get('NODE_NAME')))
+                                disk['source_type'] = 'network'
+
+                        elif config.get('DISK_FORMAT') in ['qcowflat', 'qcowflat_gluster']:
                             with util.RecordedOperation('resize image', self):
                                 resized_image_path = img.resize(
                                     [lock], disk['size'])
@@ -213,7 +233,17 @@ class Instance(object):
                                 images.create_flat(
                                     [lock], resized_image_path, disk['path'])
 
-                        elif config.get('DISK_FORMAT') == 'flat':
+                            if config.get('DISK_FORMAT') == 'qcowflat_gluster':
+                                disk['path'] = disk['path'].replace(
+                                    '/srv/shakenfist/instances',
+                                    'shakenfist'
+                                )
+                                disk['source'] = ("<source protocol='gluster' name='%s' />"
+                                                  "<host name='%s' port='24007' />"
+                                                  % (disk['path'], config.get('NODE_NAME')))
+                                disk['source_type'] = 'network'
+
+                        elif config.get('DISK_FORMAT') in ['raw', 'raw_gluster']:
                             with util.RecordedOperation('resize image', self):
                                 resized_image_path = img.resize(
                                     [lock], disk['size'])
@@ -222,8 +252,19 @@ class Instance(object):
                                 images.create_raw(
                                     [lock], resized_image_path, disk['path'])
 
+                            if config.get('DISK_FORMAT') == 'raw_gluster':
+                                disk['path'] = disk['path'].replace(
+                                    '/srv/shakenfist/instances',
+                                    'shakenfist'
+                                )
+                                disk['source'] = ("<source protocol='gluster' name='%s' />"
+                                                  "<host name='%s' port='24007' />"
+                                                  % (disk['path'], config.get('NODE_NAME')))
+                                disk['source_type'] = 'network'
+
                         else:
-                            raise Exception('Unknown disk format')
+                            raise Exception('Unknown disk format: %s'
+                                            % config.get('DISK_FORMAT'))
 
                 elif not os.path.exists(disk['path']):
                     util.execute(None, 'qemu-img create -f qcow2 %s %sG'
@@ -246,7 +287,7 @@ class Instance(object):
         with util.RecordedOperation('create domain', self):
             if not self.power_on():
                 attempts = 0
-                while not self.power_on() and attempts < 100:
+                while not self.power_on() and attempts < 10:
                     LOG.withObj(self).warning(
                         'Instance required an additional attempt to power on')
                     time.sleep(5)

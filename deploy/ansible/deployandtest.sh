@@ -237,6 +237,7 @@ ADMIN_PASSWORD="${ADMIN_PASSWORD:-Ukoh5vie}"
 FLOATING_IP_BLOCK="${FLOATING_IP_BLOCK:-10.10.0.0/24}"
 UNIQIFIER="${UNIQIFIER:-$USER"-"`date "+%y%m%d"`"-"`pwgen --no-capitalize -n1`"-"}"
 KSM_ENABLED="${KSM_ENABLED:-1}"
+GLUSTER_ENABLED="${GLUSTER_ENABLED:-0}"
 DEPLOY_NAME="sf"
 
 # Setup variables for consumption by ansible and terraform
@@ -251,6 +252,7 @@ VARIABLES="$VARIABLES,admin_password=$ADMIN_PASSWORD"
 VARIABLES="$VARIABLES,floating_network_ipblock=$FLOATING_IP_BLOCK"
 VARIABLES="$VARIABLES,mode=$MODE"
 VARIABLES="$VARIABLES,ksm_enabled=$KSM_ENABLED"
+VARIABLES="$VARIABLES,gluster_enabled=$GLUSTER_ENABLED"
 VARIABLES="$VARIABLES,deploy_name=$DEPLOY_NAME"
 
 echo "VARIABLES: $VARIABLES"
@@ -277,9 +279,9 @@ then
   ansible-playbook $VERBOSE -i hosts --extra-vars "$ANSIBLE_VARS" terraform/$CLOUD/local.yml $@
 fi
 
-# Old fashioned ansible CI
 if [ "%$SKIP_SF_TESTS%" == "%%" ]
 then
+  # Old fashioned ansible CI
   ansible-playbook $VERBOSE -i hosts --extra-vars "$ANSIBLE_VARS" ../ansible-ci/pretest.yml $@
   for playbook in `ls ../ansible-ci/tests/test_*.yml | grep -v test_final.yml | shuf`
   do
